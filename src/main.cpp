@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
-#include <iostream>
 #include <queue>
 #include <raylib.h>
 #include <rlgl.h>
@@ -47,63 +46,69 @@ float minDistFinal = INT_MAX;
 std::vector<std::pair<Vector2, Vector2>> visitedLines;
 std::vector<Node*> solution;
 int calls = 40;
-/*std::vector<Node*> dijkstra() {
-  auto distance = [](Node* a, Node* b) {
-    return Vector2Distance({a->x, a->y}, {b->x, b->y});
-  };
-  
-  std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>> pq;
-  std::unordered_map<long long int, float> dist;
-  std::unordered_map<long long int, Node*> prev;
-
-  for (const auto& [id, node] : nodes) {
-    dist[id] = std::numeric_limits<float>::infinity();
-  }
-  dist[inicioId] = 0;
-  pq.push({0, nodes[inicioId]});
-
-  while (!pq.empty()) {
-    auto [current_dist, current] = pq.top();
-    pq.pop();
-
-    if (current->id == finalId) break;
-
-    for (Node* neighbor : current->neighbors) {
-      float new_dist = current_dist + distance(current, neighbor);
-
-      if (new_dist < dist[neighbor->id]) {
-        dist[neighbor->id] = new_dist;
-        prev[neighbor->id] = current;
-        pq.push({new_dist, neighbor});
-      }
-    }
-  }
-
-  std::vector<Node*> path;
-  for (Node* at = nodes[finalId]; at != nullptr; at = prev[at->id]) {
-    path.push_back(at);
-  }
-  std::reverse(path.begin(), path.end());
-
-  if (!path.empty() && path.front()->id == inicioId) return path;
-  return {};
-}*/
 
 std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>> pq;
 std::unordered_map<long long int, float> dist;
 std::unordered_map<long long int, Node*> prev;
 
+void aStar() {
+  if (dist.empty()) {
+    for (std::pair<long long int, Node*> pair : nodes) {
+      dist[pair.first] = std::numeric_limits<float>::infinity();
+    }
+    dist[inicioId] = 0;
+    float h_inicio = Vector2Distance(
+      {nodes[inicioId]->x, nodes[inicioId]->y}, 
+      {nodes[finalId]->x, nodes[finalId]->y}
+    );
+    pq.push({h_inicio, nodes[inicioId]});
+  }
+
+  if (!pq.empty()) {
+    std::pair<float, Node*> currentPair = pq.top();
+    float current_f = currentPair.first;
+    Node* current = currentPair.second;
+    pq.pop();
+
+    if (current->id == finalId) {
+      pq = std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>>();
+      for (Node* at = nodes[finalId]; at != nullptr; at = prev[at->id]) {
+        solution.push_back(at);
+      }
+      std::reverse(solution.begin(), solution.end());
+      return;
+    }
+
+    for (Node* neighbor : current->neighbors) {
+      visitedLines.push_back(std::make_pair(Vector2{neighbor->x, neighbor->y}, Vector2{current->x, current->y}));
+      float g_new = dist[current->id] + Vector2Distance({current->x, current->y}, {neighbor->x, neighbor->y});
+      float h_new = Vector2Distance(
+        {neighbor->x, neighbor->y}, 
+        {nodes[finalId]->x, nodes[finalId]->y}
+      );
+
+      if (g_new < dist[neighbor->id]) {
+        dist[neighbor->id] = g_new;
+        prev[neighbor->id] = current;
+        pq.push({g_new + h_new, neighbor});
+      }
+    }
+  }
+}
+
 void dijkstra() {
   if (dist.empty()) {
-    for (const auto& [id, node] : nodes) {
-      dist[id] = std::numeric_limits<float>::infinity();
+    for (std::pair<long long int, Node*> pair : nodes) {
+      dist[pair.first] = std::numeric_limits<float>::infinity();
     }
     dist[inicioId] = 0;
     pq.push({0, nodes[inicioId]});
   }
 
   if (!pq.empty()) {
-    auto [current_dist, current] = pq.top();
+    std::pair<float, Node*> currentPair = pq.top();
+    float current_dist = currentPair.first;
+    Node* current = currentPair.second;
     pq.pop();
 
     if (current->id == finalId) {
@@ -125,10 +130,7 @@ void dijkstra() {
         pq.push({new_dist, neighbor});
       }
     }
-
-    
   }
-
 }
 
 bool loading = false;
@@ -177,9 +179,9 @@ void mainLoop() {
   } else loading = false;
 
   if (IsKeyDown(KEY_SPACE) && inicioId != -1 && finalId != -1) {
-    for (int i = 0; i < calls; i++) dijkstra();
+    //for (int i = 0; i < calls; i++) dijkstra();
+    for (int i = 0; i < calls; i++) aStar();
     calls++;
-    //solution = dijkstra();
   }
 
   Vector2 mouseWorldPos = GetScreenToWorld2D(mouse, cam);
