@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 #include "map.hpp"
-#include "map_converter.hpp"
 #include "map_parser.hpp"
 #if defined(__EMSCRIPTEN__)
   #include <emscripten/emscripten.h>
@@ -50,6 +49,8 @@ int calls = 40;
 std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>> pq;
 std::unordered_map<long long int, float> dist;
 std::unordered_map<long long int, Node*> prev;
+
+bool useAStar = true;
 
 void aStar() {
   if (dist.empty()) {
@@ -178,9 +179,18 @@ void mainLoop() {
     loading = true;
   } else loading = false;
 
+  if (IsKeyReleased(KEY_X)) {
+    useAStar = !useAStar;
+
+    solution.clear();
+    visitedLines.clear();
+    inicio = true;
+    inicioId = -1;
+  }
+
   if (IsKeyDown(KEY_SPACE) && inicioId != -1 && finalId != -1) {
-    //for (int i = 0; i < calls; i++) dijkstra();
-    for (int i = 0; i < calls; i++) aStar();
+    if (useAStar) for (int i = 0; i < calls; i++) aStar();
+    else for (int i = 0; i < calls; i++) dijkstra();
     calls++;
   }
 
@@ -255,13 +265,6 @@ void mainLoop() {
     calls = 40;
   }
 
-  if (inicio && inicioId != -1) {
-    DrawCircle(nodes[inicioId]->x, nodes[inicioId]->y, 5, {255, 0, 0, 200});
-  }
-  if (final && finalId != -1) {
-    DrawCircle(nodes[finalId]->x, nodes[finalId]->y, 5, {255, 0, 0, 200});
-  }
-
   rlDrawRenderBatchActive();
   rlSetLineWidth(1.5);
   for (std::pair<Vector2, Vector2> line : visitedLines) {
@@ -278,9 +281,18 @@ void mainLoop() {
   rlDrawRenderBatchActive();
   rlSetLineWidth(1);
 
+  if (inicio && inicioId != -1) {
+    DrawCircle(nodes[inicioId]->x, nodes[inicioId]->y, 5, {255, 0, 0, 255});
+  }
+  if (final && finalId != -1) {
+    DrawCircle(nodes[finalId]->x, nodes[finalId]->y, 5, {255, 0, 0, 255});
+  }
+
   DrawText("Right click -> Start", 600, -140, 10.0, WHITE);
   DrawText("Left click -> Finish", 600, -130, 10.0, WHITE);
   DrawText("Spacebar -> Solve", 600, -120, 10.0, WHITE);
+  DrawText("X -> Switch mode", 600, -110, 10.0, WHITE);
+  DrawText(std::string("Current mode: " + std::string(useAStar ? "A*" : "Dijkstra")).c_str(), 600, -100, 10.0, WHITE);
 
   EndMode2D();
   EndTextureMode();
