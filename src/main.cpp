@@ -1,24 +1,20 @@
-#include <algorithm>
-#include <climits>
-#include <cstdlib>
+// #include <bits/stdc++.h>
 #include <queue>
 #include <raylib.h>
 #include <rlgl.h>
 #include <raymath.h>
-#include <math.h>
+#include <stack>
 #include <string>
-#include <unordered_map>
-#include <utility>
 #include <vector>
-#include "map.hpp"
-#include "map_parser.hpp"
 #if defined(__EMSCRIPTEN__)
   #include <emscripten/emscripten.h>
 #endif
 
+using namespace std;
+
 const int WINDOW_WIDTH = 1280;
 const int WINDOW_HEIGHT = 720;
-const char* WINDOW_NAME = "PathMania";
+const char* WINDOW_NAME = "Graphs";
 
 const int GAME_SCREEN_WIDTH = 1280;
 const int GAME_SCREEN_HEIGHT = 720;
@@ -29,112 +25,124 @@ Vector2 mouse;
 
 RenderTexture2D target;
 
-long long int inicioId = -1;
-long long int finalId = -1;
-long long int closestInicioId = -1;
-long long int closestFinalId = -1;
-bool inicio = false;
-bool final = false;
-float inicioX = 0;
-float inicioY = 0;
-float finalX = 0;
-float finalY = 0;
-float minDistInicio = INT_MAX;
-float minDistFinal = INT_MAX;
+Font font;
 
-std::vector<std::pair<Vector2, Vector2>> visitedLines;
-std::vector<Node*> solution;
-int calls = 40;
+float nodeR = 20.0f;
+class Node {
+public:
+  int id;
+  float x, y;
 
-std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>> pq;
-std::unordered_map<long long int, float> dist;
-std::unordered_map<long long int, Node*> prev;
+  bool marked = false;
 
-bool useAStar = true;
+  Node(int id, float x, float y) : x(x), y(y), id(id) {};
 
-void aStar() {
-  if (dist.empty()) {
-    for (std::pair<long long int, Node*> pair : nodes) {
-      dist[pair.first] = std::numeric_limits<float>::infinity();
-    }
-    dist[inicioId] = 0;
-    float h_inicio = Vector2Distance(
-      {nodes[inicioId]->x, nodes[inicioId]->y}, 
-      {nodes[finalId]->x, nodes[finalId]->y}
-    );
-    pq.push({h_inicio, nodes[inicioId]});
+  void drawNode() {
+    DrawCircle(x, y, nodeR, marked ? ORANGE : BLACK);
+    DrawCircle(x, y, nodeR * 0.9, WHITE);
+
+    string text = to_string(id).c_str();
+    float textX = x - MeasureTextEx(font, text.c_str(), 30.0f, 0.0f).x / 2.0f;
+    float textY = y - MeasureTextEx(font, text.c_str(), 30.0f, 0.0f).y / 2.0f;
+    DrawTextEx(font, to_string(id).c_str(), {textX, textY}, 30.0f, 0.0f, BLACK);
+  }
+};
+
+class Graph {
+public:
+  vector<Node> nodes;
+  vector<vector<int>> adj;
+
+  bool startedDFS = false, startedBFS = false;
+  stack<int> dfsStack;
+  queue<int> bfsQueue;
+
+  void addNode(float x, float y) {
+    nodes.push_back(Node(nodes.size(), x, y));
+    adj.push_back(vector<int>());
   }
 
-  if (!pq.empty()) {
-    std::pair<float, Node*> currentPair = pq.top();
-    float current_f = currentPair.first;
-    Node* current = currentPair.second;
-    pq.pop();
+  void addEdge(int u, int v) {
+    adj[u].push_back(v);
+    adj[v].push_back(u);
+  }
 
-    if (current->id == finalId) {
-      pq = std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>>();
-      for (Node* at = nodes[finalId]; at != nullptr; at = prev[at->id]) {
-        solution.push_back(at);
+  void drawGraph() {
+    for (int i = 0; i < adj.size(); i++) {
+      Vector2 start = {nodes[i].x, nodes[i].y};
+      for (int j = 0; j < adj[i].size(); j++) {
+        bool markEdge = (nodes[i].marked && nodes[adj[i][j]].marked);
+        Vector2 end = {nodes[adj[i][j]].x, nodes[adj[i][j]].y};
+        DrawLineEx(start, end, 5, markEdge ? ORANGE : BLACK);
       }
-      std::reverse(solution.begin(), solution.end());
-      return;
     }
 
-    for (Node* neighbor : current->neighbors) {
-      visitedLines.push_back(std::make_pair(Vector2{neighbor->x, neighbor->y}, Vector2{current->x, current->y}));
-      float g_new = dist[current->id] + Vector2Distance({current->x, current->y}, {neighbor->x, neighbor->y});
-      float h_new = Vector2Distance(
-        {neighbor->x, neighbor->y}, 
-        {nodes[finalId]->x, nodes[finalId]->y}
-      );
+    for (int i = 0; i < nodes.size(); i++) {
+      nodes[i].drawNode();
+    }
+  }
 
-      if (g_new < dist[neighbor->id]) {
-        dist[neighbor->id] = g_new;
-        prev[neighbor->id] = current;
-        pq.push({g_new + h_new, neighbor});
+  void restartAlgorithms() {
+    startedDFS = false;
+    startedBFS = false;
+
+    dfsStack = stack<int>();
+    bfsQueue = queue<int>();
+
+    for (int i = 0; i < nodes.size(); i++) {
+      nodes[i].marked = false;
+    }
+  }
+
+  void dfsStep() {
+    if (dfsStack.empty()) return;
+    
+    int current = dfsStack.top();
+
+    bool visitedAll = true;
+
+    for (int neighbour : adj[current]) {
+      if (!nodes[neighbour].marked) {
+        nodes[neighbour].marked = true;
+        dfsStack.push(neighbour);
+        visitedAll = false;
+        break;
+      }
+    }
+
+    if (visitedAll) {
+      dfsStack.pop();
+    }
+  }
+
+  void bfsStep() {
+    if (bfsQueue.empty()) return;
+    
+    int current = bfsQueue.front();
+    bfsQueue.pop();
+
+    for (int neighbour : adj[current]) {
+      if (!nodes[neighbour].marked) {
+        nodes[neighbour].marked = true;
+        bfsQueue.push(neighbour);
       }
     }
   }
-}
 
-void dijkstra() {
-  if (dist.empty()) {
-    for (std::pair<long long int, Node*> pair : nodes) {
-      dist[pair.first] = std::numeric_limits<float>::infinity();
-    }
-    dist[inicioId] = 0;
-    pq.push({0, nodes[inicioId]});
-  }
-
-  if (!pq.empty()) {
-    std::pair<float, Node*> currentPair = pq.top();
-    float current_dist = currentPair.first;
-    Node* current = currentPair.second;
-    pq.pop();
-
-    if (current->id == finalId) {
-      pq = std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>>();
-      for (Node* at = nodes[finalId]; at != nullptr; at = prev[at->id]) {
-        solution.push_back(at);
-      }
-      std::reverse(solution.begin(), solution.end());
-      return;
-    }
-
-    for (Node* neighbor : current->neighbors) {
-      visitedLines.push_back(std::make_pair(Vector2{neighbor->x, neighbor->y}, Vector2{current->x, current->y}));
-      float new_dist = current_dist + Vector2Distance({current->x, current->y}, {neighbor->x, neighbor->y});
-
-      if (new_dist < dist[neighbor->id]) {
-        dist[neighbor->id] = new_dist;
-        prev[neighbor->id] = current;
-        pq.push({new_dist, neighbor});
+  int getNode(float x, float y) {
+    for (int i = 0; i < nodes.size(); i++) {
+      if (CheckCollisionPointCircle({x, y}, {nodes[i].x, nodes[i].y}, nodeR)) {
+        return i;
       }
     }
+    return -1;
   }
-}
+};
 
-bool loading = false;
+Graph g;
+
+int mode = 0; // 0 = "build graph" 1 = "dfs" 2 = "bfs"
+int stNode = -1;
 
 void mainLoop() {
   float scale = fmin((float) GetScreenWidth() / GAME_SCREEN_WIDTH, (float) GetScreenHeight() / GAME_SCREEN_HEIGHT);
@@ -144,7 +152,26 @@ void mainLoop() {
   mouse.y = (mouse.y - (GetScreenHeight() - (GAME_SCREEN_HEIGHT * scale)) * 0.5f) / scale;
   mouse = Vector2Clamp(mouse, (Vector2){ 0, 0 }, (Vector2){ (float) GAME_SCREEN_WIDTH, (float) GAME_SCREEN_HEIGHT });
 
-  /*if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+  BeginTextureMode(target);
+  ClearBackground(WHITE);
+  BeginMode2D(cam);
+
+  Rectangle viewRect = { cam.target.x - cam.offset.x / cam.zoom, cam.target.y - cam.offset.y / cam.zoom, GetScreenWidth() / cam.zoom, GetScreenHeight() / cam.zoom };
+ 
+  Vector2 mouseWorldPos = GetScreenToWorld2D(mouse, cam);
+
+  if (IsKeyPressed(KEY_ONE)) {
+    mode = 0;
+    g.restartAlgorithms();
+  } else if (IsKeyPressed(KEY_TWO)) {
+    mode = 1;
+    g.restartAlgorithms();
+  } else if (IsKeyPressed(KEY_THREE)) {
+    mode = 2;
+    g.restartAlgorithms();
+  }
+
+  if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
     Vector2 delta = GetMouseDelta();
     delta = {delta.x / cam.zoom, delta.y / cam.zoom};
     cam.target = Vector2Subtract(cam.target, delta);
@@ -160,141 +187,60 @@ void mainLoop() {
 
     float scaleFactor = 1.0f + (0.25f * fabsf(wheelDelta));
     if (wheelDelta < 0) scaleFactor = 1.0f / scaleFactor;
-    cam.zoom = Clamp(cam.zoom * scaleFactor, 0.0125f, 64.0f);
-  }*/
-
-  BeginTextureMode(target);
-  ClearBackground(BLACK);
-  BeginMode2D(cam);
-
-  Rectangle viewRect = { cam.target.x - cam.offset.x / cam.zoom, cam.target.y - cam.offset.y / cam.zoom, GetScreenWidth() / cam.zoom, GetScreenHeight() / cam.zoom };
- 
-
-  if (loading) {
-    loadMap("res/valencia2.osm");
+    cam.zoom = Clamp(cam.zoom * scaleFactor, 0.5f, 16.0f);
   }
 
-  if (nodes.empty() || ways.empty()) {
-    DrawText("Loading map...", 200, 300, 100, WHITE);
-    loading = true;
-  } else loading = false;
-
-  if (IsKeyReleased(KEY_X)) {
-    useAStar = !useAStar;
-
-    solution.clear();
-    visitedLines.clear();
-    inicio = true;
-    inicioId = -1;
+  if (IsKeyReleased(KEY_SPACE)) {
+    if (mode == 1) g.dfsStep();
+    else if (mode == 2) g.bfsStep();
   }
 
-  if (IsKeyDown(KEY_SPACE) && inicioId != -1 && finalId != -1) {
-    if (useAStar) for (int i = 0; i < calls; i++) aStar();
-    else for (int i = 0; i < calls; i++) dijkstra();
-    calls++;
+  if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    stNode = g.getNode(mouseWorldPos.x, mouseWorldPos.y);
   }
 
-  Vector2 mouseWorldPos = GetScreenToWorld2D(mouse, cam);
-  if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-    inicio = true;
-    inicioX = mouseWorldPos.x;
-    inicioY = mouseWorldPos.y;
-    inicioId = -1;
-  }
-  
-  if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-    final = true;
-    finalX = mouseWorldPos.x;
-    finalY = mouseWorldPos.y;
-    finalId = -1;
-  }
+  if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+    if (stNode != -1) {
+      if (mode == 0) {
+        int fiNode = g.getNode(mouseWorldPos.x, mouseWorldPos.y);
 
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(1.0);
-  for (long long int i = 0; i < ways.size(); i++) {
-    if (ways[i] == nullptr || ways[i]->nodes.empty()) continue;
-    for (long long int j = 1; j < ways[i]->nodes.size(); j++) {
-      if (ways[i]->nodes[j] == nullptr || ways[i]->nodes[j - 1] == nullptr) continue;
-
-      Vector2 startPos = { ways[i]->nodes[j - 1]->x, ways[i]->nodes[j - 1]->y };
-      Vector2 endPos = { ways[i]->nodes[j]->x, ways[i]->nodes[j]->y };
-      
-      if (CheckCollisionPointRec(startPos, viewRect) || CheckCollisionPointRec(endPos, viewRect)) {
-        DrawLine(startPos.x, startPos.y, endPos.x, endPos.y, WHITE);
-
-        if (inicio && inicioId == -1) {
-          int thisDistance = Vector2Distance({startPos.x, startPos.y}, {inicioX, inicioY});
-          if (minDistInicio > thisDistance) {
-            minDistInicio = thisDistance;
-            closestInicioId = ways[i]->nodes[j]->id;
-          }
+        if (fiNode != -1) {
+          g.addEdge(stNode, fiNode);
         }
-        if (final && finalId == -1) {
-          int thisDistance = Vector2Distance({startPos.x, startPos.y}, {finalX, finalY});
-          if (minDistFinal > thisDistance) {
-            minDistFinal = thisDistance;
-            closestFinalId = ways[i]->nodes[j]->id;
-          }
-        }
+      } else if (mode == 1) {
+        g.restartAlgorithms();
+
+        g.startedDFS = true;
+        g.nodes[stNode].marked = true;
+        g.dfsStack.push(stNode);
+      } else if (mode == 2) {
+        g.restartAlgorithms();
+
+        g.startedBFS = true;
+        g.nodes[stNode].marked = true;
+        g.bfsQueue.push(stNode);
       }
+    } else {
+      if (mode == 0) g.addNode(mouseWorldPos.x, mouseWorldPos.y);
     }
-  }
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(1.0);
 
-  if (inicio && inicioId == -1) {
-    inicioId = closestInicioId;
-    closestInicioId = -1;
-    minDistInicio = INT_MAX;
-    solution.clear();
-    visitedLines.clear();
-    pq = std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>>();
-    dist.clear();
-    prev.clear();
-    calls = 40;
-  }
-  if (final && finalId == -1) {
-    finalId = closestFinalId;
-    closestFinalId = -1;
-    minDistFinal = INT_MAX;
-    solution.clear();
-    visitedLines.clear();
-    pq = std::priority_queue<std::pair<float, Node*>, std::vector<std::pair<float, Node*>>, std::greater<>>();
-    dist.clear();
-    prev.clear();
-    calls = 40;
+    stNode = -1;
   }
 
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(1.5);
-  for (std::pair<Vector2, Vector2> line : visitedLines) {
-    DrawLineV(line.first, line.second, BLUE);
-  }
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(1.5);
+  g.drawGraph();
 
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(10.0);
-  for (int i = 1; i < solution.size(); i++) {
-    DrawLine(solution[i]->x, solution[i]->y, solution[i - 1]->x, solution[i - 1]->y, GREEN);
-  }
-  rlDrawRenderBatchActive();
-  rlSetLineWidth(1);
+  string modeStr = "Build graph";
 
-  if (inicio && inicioId != -1) {
-    DrawCircle(nodes[inicioId]->x, nodes[inicioId]->y, 5, {255, 0, 0, 255});
+  if (mode == 1) {
+    modeStr = "Depth-first search";
+  } else if (mode == 2) {
+    modeStr = "Breadth-first search";
   }
-  if (final && finalId != -1) {
-    DrawCircle(nodes[finalId]->x, nodes[finalId]->y, 5, {255, 0, 0, 255});
-  }
-
-  DrawText("Right click -> Start", 600, -140, 10.0, WHITE);
-  DrawText("Left click -> Finish", 600, -130, 10.0, WHITE);
-  DrawText("Spacebar -> Solve", 600, -120, 10.0, WHITE);
-  DrawText("X -> Switch mode", 600, -110, 10.0, WHITE);
-  DrawText(std::string("Current mode: " + std::string(useAStar ? "A*" : "Dijkstra")).c_str(), 600, -100, 10.0, WHITE);
 
   EndMode2D();
+
+  DrawTextEx(font, modeStr.c_str(), {20, 20}, 30.0f, 0.0f, DARKGRAY);
+
   EndTextureMode();
 
   BeginDrawing();
@@ -306,8 +252,10 @@ void mainLoop() {
 }
 
 int main() {
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+  // SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_NAME);
+  
+  font = LoadFontEx("res/arial.ttf", 30, 0, 0);
 
   target = LoadRenderTexture(GAME_SCREEN_WIDTH, GAME_SCREEN_HEIGHT);
   SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);
@@ -315,16 +263,11 @@ int main() {
   SetTargetFPS(60);
 
   cam = {  };
-  cam.zoom = 1.25;
-  cam.target.x = 527;
-  cam.target.y = 265;
-  cam.offset.x = 776;
-  cam.offset.y = 520;
-
-  // Load the map
-  /*nodes = loadNodes(file);
-  ways = loadWays(file);
-  optimizeMap();*/
+  cam.zoom = 1.0f;
+  cam.target.x = 0.0f;
+  cam.target.y = 0.0f;
+  cam.offset.x = 0.0f;
+  cam.offset.y = 0.0f;
 
 #if defined(__EMSCRIPTEN__)
   emscripten_set_main_loop(mainLoop, 240, 1);
